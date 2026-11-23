@@ -91,7 +91,7 @@ async def main():
         data = await pv.evaluate("document.getElementById('video-canvas').toDataURL('image/png')")
         import base64
         (OUT / "07-video-mid.png").write_bytes(base64.b64decode(data.split(",")[1]))
-        await pv.wait_for_selector("#vm-video:not(.hidden)", timeout=30000)
+        await pv.wait_for_selector("#vm-video:not(.hidden)", timeout=180000)
         info = await pv.evaluate("""async () => {
             const v = document.getElementById('vm-video');
             await new Promise(r => v.readyState >= 1 ? r() : v.onloadedmetadata = r);

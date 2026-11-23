@@ -68,14 +68,14 @@ function renderPicks() {
   if (!P.items.length) P.race = null;
   P.items.forEach((i, n) => {
     const race = P.race, d = race.d, col = RUNNER_COLORS[n];
-    const fin = d.st[i] === ST.FIN;
     const el = document.createElement("div");
     el.className = "pick";
     el.style.setProperty("--c", col.hex);
+    // no result spoilers here: just bib and category, the replay tells the story
     el.innerHTML = `<span class="dot"></span>
       <div class="main">
-        <div class="bib">${esc(d.bib[i])}<span class="st-pill ${fin ? "st-fin" : "st-stop"}">${fin ? "FINISH" : (d.st[i] === ST.DNF ? "DNF" : "TIDAK FINISH")}</span></div>
-        <div class="sub">${esc(d.name)} · ${fin ? `<b>${fmtDur(race.finishT[i])}</b>${d.pos[i] ? ` · #${nf.format(d.pos[i])}` : ""}` : `terakhir KM <b>${fmtKm(lastRealKm(race, i))}</b>`}</div>
+        <div class="bib">${esc(d.bib[i])}</div>
+        <div class="sub">${esc(d.name)}</div>
       </div>
       <button class="rm" aria-label="Hapus">×</button>`;
     el.querySelector(".rm").onclick = () => { P.items.splice(n, 1); renderPicks(); };
