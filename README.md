@@ -13,7 +13,9 @@ index.html            halaman utama (search + replay)
 css/app.css
 js/sim.js             model simulasi (posisi tiap pelari pada waktu t)
 js/render.js          gambar rute, crowd, dan titik bersinar di canvas
-js/video.js           rekam video 9:16 di browser (MediaRecorder)
+js/video.js           video 9:16 di browser: WebCodecs + mp4-muxer (MP4 standar
+                      dengan durasi benar); MediaRecorder hanya sebagai cadangan
+js/vendor/            mp4-muxer 5.2.2 (MIT)
 js/app.js             UI, kontrol replay, share
 data/{fm,hm,10k}.json data ringkas hasil olahan (hanya bib, tanpa nama)
 sw.js, manifest.webmanifest, icons/   PWA

@@ -2,6 +2,7 @@
 // Supports 1–3 compared runners (same category).
 import { STATE, REASON, fmtClock, fmtDur, fmtKm, nf, crowdLabel } from "./sim.js";
 import { Scene, fitLayout, COLORS } from "./render.js";
+import { Muxer, ArrayBufferTarget } from "./vendor/mp4-muxer.mjs";
 
 const MIMES = [
   "video/mp4;codecs=avc1.42E01E",
@@ -13,14 +14,12 @@ const MIMES = [
 ];
 
 const INTRO = 1.2, RACE = 14, OUTRO = 3.4;
+const FPS = 30;
+const CREDIT = "@ryanepwijaya";
+const AVC_CODECS = ["avc1.4d0028", "avc1.640028", "avc1.42e028", "avc1.42001f"];
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 export async function recordVideo(canvas, race, sels, onProgress) {
-  if (!canvas.captureStream || typeof MediaRecorder === "undefined") throw new Error("unsupported");
-  const mime = MIMES.find((m) => MediaRecorder.isTypeSupported(m));
-  if (!mime) throw new Error("no mime");
-  const ext = mime.includes("mp4") ? "mp4" : "webm";
-
   const W = canvas.width, H = canvas.height;
   const u = W / 360; // layout designed on a 360 × 640 grid
   const ctx = canvas.getContext("2d");
@@ -37,42 +36,90 @@ export async function recordVideo(canvas, race, sels, onProgress) {
   const endMax = Math.max(...sels.map((s) => race.endT[s.i]));
   const tEnd = Math.min(race.tMax, endMax + Math.max(240, race.tMax * 0.04));
   const ranks = sels.map((s) => race.checkpointRanks(s.i).filter((r) => r && !r.est));
-
-  const stream = canvas.captureStream(30);
-  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
-  const chunks = [];
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  const done = new Promise((res) => (rec.onstop = res));
-
   const total = INTRO + RACE + OUTRO;
-  let startTs = null;
   let finalStats = null;
 
-  race.step(0);
-  frame(0, 0, sels.map((s) => race.stats(s.i, 0)), 0);
-  rec.start(200);
+  // draw the frame for elapsed video time `el` (seconds)
+  const render = (el, now) => {
+    let t;
+    if (el < INTRO) t = 0;
+    else if (el < INTRO + RACE) t = easeInOut((el - INTRO) / RACE) * tEnd;
+    else t = tEnd;
+    race.step(t);
+    const st = sels.map((s) => race.stats(s.i, t));
+    if (el >= INTRO + RACE && !finalStats) finalStats = st;
+    frame(t, now, st, el >= INTRO + RACE ? Math.min(1, (el - INTRO - RACE) / 0.5) : 0);
+  };
 
-  await new Promise((resolve) => {
-    const tick = (now) => {
-      if (startTs == null) startTs = now;
-      const el = (now - startTs) / 1000;
-      onProgress && onProgress(Math.min(1, el / total));
-      let t;
-      if (el < INTRO) t = 0;
-      else if (el < INTRO + RACE) t = easeInOut((el - INTRO) / RACE) * tEnd;
-      else t = tEnd;
-      race.step(t);
-      const st = sels.map((s) => race.stats(s.i, t));
-      if (el >= INTRO + RACE && !finalStats) finalStats = st;
-      frame(t, now, st, el >= INTRO + RACE ? Math.min(1, (el - INTRO - RACE) / 0.5) : 0);
-      if (el < total) requestAnimationFrame(tick);
-      else resolve();
-    };
-    requestAnimationFrame(tick);
-  });
-  rec.stop();
-  await done;
-  return { blob: new Blob(chunks, { type: mime.split(";")[0] }), mime, ext };
+  // Preferred: WebCodecs + MP4 muxer -> standard MP4 with a correct duration,
+  // rendered frame by frame (no dropped frames, faster than real time).
+  const codec = await pickAvcCodec(W, H);
+  if (codec) return await encodeMp4(codec);
+  // Fallback: MediaRecorder (real time). Some apps misread its duration.
+  return await recordRealtime();
+
+  async function encodeMp4(codec) {
+    const muxer = new Muxer({
+      target: new ArrayBufferTarget(),
+      video: { codec: "avc", width: W, height: H, frameRate: FPS },
+      fastStart: "in-memory",
+    });
+    let failure = null;
+    const enc = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => { failure = e; },
+    });
+    enc.configure({ codec, width: W, height: H, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" } });
+    const N = Math.round(total * FPS);
+    const dur = Math.round(1e6 / FPS);
+    for (let i = 0; i < N; i++) {
+      if (failure) throw failure;
+      render(i / FPS, (i * 1000) / FPS);
+      const vf = new VideoFrame(canvas, { timestamp: i * dur, duration: dur });
+      enc.encode(vf, { keyFrame: i % (FPS * 2) === 0 });
+      vf.close();
+      onProgress && onProgress((i + 1) / N);
+      // keep the UI responsive and the encoder queue short
+      if (enc.encodeQueueSize > 6 || i % 8 === 0) {
+        await new Promise((r) => setTimeout(r, 0));
+        while (enc.encodeQueueSize > 6) await new Promise((r) => setTimeout(r, 5));
+      }
+    }
+    await enc.flush();
+    enc.close();
+    if (failure) throw failure;
+    muxer.finalize();
+    return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), mime: "video/mp4", ext: "mp4" };
+  }
+
+  async function recordRealtime() {
+    if (!canvas.captureStream || typeof MediaRecorder === "undefined") throw new Error("unsupported");
+    const mime = MIMES.find((m) => MediaRecorder.isTypeSupported(m));
+    if (!mime) throw new Error("no mime");
+    const ext = mime.includes("mp4") ? "mp4" : "webm";
+    const stream = canvas.captureStream(FPS);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
+    const chunks = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    const done = new Promise((res) => (rec.onstop = res));
+    render(0, 0);
+    rec.start();
+    await new Promise((resolve) => {
+      let startTs = null;
+      const tick = (now) => {
+        if (startTs == null) startTs = now;
+        const el = (now - startTs) / 1000;
+        onProgress && onProgress(Math.min(1, el / total));
+        render(Math.min(el, total), now);
+        if (el < total) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+    rec.stop();
+    await done;
+    return { blob: new Blob(chunks, { type: mime.split(";")[0] }), mime, ext };
+  }
 
   function frame(t, now, st, outro) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -95,6 +142,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     ctx.fillStyle = "rgba(214,222,255,0.4)";
     ctx.font = `600 ${8 * u}px ${FONT}`;
     ctx.fillText("SIMULASI TIDAK RESMI", 340 * u, 38 * u);
+    ctx.fillText(`oleh ${CREDIT}`, 340 * u, 50 * u);
     ctx.textAlign = "left";
     let x = 20 * u;
     ctx.font = `800 ${(multi ? 26 : 36) * u}px ${FONT}`;
@@ -215,7 +263,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     ctx.fillStyle = "rgba(214,222,255,0.45)";
     const fy = (multi ? 215 + sels.length * 82 : 440) * u;
     ctx.fillText(location.host || "bormar replay", W / 2, fy);
-    ctx.fillText("Simulasi tidak resmi · hanya untuk hiburan", W / 2, fy + 15 * u);
+    ctx.fillText(`Simulasi tidak resmi oleh ${CREDIT} · hanya untuk hiburan`, W / 2, fy + 15 * u);
     ctx.globalAlpha = 1;
   }
 
@@ -233,6 +281,17 @@ export async function recordVideo(canvas, race, sels, onProgress) {
       ctx.fillText(`menyalip ${nf.format(gained)} pelari`, W / 2, (y + 26) * u);
     }
   }
+}
+
+async function pickAvcCodec(width, height) {
+  if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") return null;
+  for (const codec of AVC_CODECS) {
+    try {
+      const r = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" } });
+      if (r.supported) return codec;
+    } catch (e) { /* try next */ }
+  }
+  return null;
 }
 
 function reasonText(race, i, long) {

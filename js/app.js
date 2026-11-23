@@ -138,7 +138,7 @@ function syncSelection() {
   R.sels = P.items.map((i, n) => ({ i, color: RUNNER_COLORS[n] }));
   history.replaceState(null, "", `?bib=${P.items.map((i) => race.d.bib[i]).join(",")}`);
   $("who-bib").innerHTML = R.sels.map((s) => `<span style="color:${s.color.hex}">${esc(race.d.bib[s.i])}</span>`).join('<span class="vs">vs</span>');
-  $("who-cat").textContent = `${race.d.name} · semua start ${race.d.waves[0]} (wave 1)`;
+  $("who-cat").textContent = `${race.d.name} · start ${race.d.waves[0]}`;
   $("add-form").classList.toggle("hidden", R.sels.length >= MAX);
   buildCards();
   buildMarkers();
@@ -298,7 +298,7 @@ function buildDetail() {
       cells.map((c) => c ? `<td>${fmtDur(c.t)}<small>#${nf.format(c.rank)} · ${fmtHM(d.start + c.t)}</small></td>` : `<td class="muted">–</td>`).join("") + `</tr>`;
   }
   html += `</tbody></table>
-  <p class="foot small">Waktu tempuh dari start wave 1 (${d.waves[0]}); baris kecil = peringkat di checkpoint · jam.${anyEst ? " † KM 5,6 tidak ada di data resmi; waktunya diestimasi." : ""}</p>`;
+  <p class="foot small">Waktu tempuh dari start ${d.waves[0]}; baris kecil = peringkat di checkpoint · jam.${anyEst ? " † KM 5,6 tidak ada di data resmi; waktunya diestimasi." : ""}</p>`;
   $("detail-body").innerHTML = html;
 }
 

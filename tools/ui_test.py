@@ -100,6 +100,14 @@ async def main():
             return {name: a.download, size: blob.size, type: blob.type, w: v.videoWidth, h: v.videoHeight};
         }""")
         print("video:", info)
+        b64 = await pv.evaluate("""async () => {
+            const blob = await fetch(document.getElementById('vm-download').href).then(r => r.blob());
+            const buf = new Uint8Array(await blob.arrayBuffer());
+            let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+            return btoa(s);
+        }""")
+        import base64 as _b
+        (OUT / ("video." + info["name"].rsplit(".", 1)[1])).write_bytes(_b.b64decode(b64))
         data = await pv.evaluate("document.getElementById('video-canvas').toDataURL('image/png')")
         (OUT / "08-video-outro.png").write_bytes(base64.b64decode(data.split(",")[1]))
 

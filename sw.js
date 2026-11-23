@@ -1,9 +1,9 @@
 // Network-first for everything (always the latest deploy when online),
 // cache only as an offline fallback. Bump VERSION on every deploy.
-const VERSION = "bormar-replay-v5";
+const VERSION = "bormar-replay-v6";
 const ASSETS = [
   "./", "index.html", "css/app.css",
-  "js/app.js", "js/sim.js", "js/render.js", "js/video.js",
+  "js/app.js", "js/sim.js", "js/render.js", "js/video.js", "js/vendor/mp4-muxer.mjs",
   "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png",
 ];
 self.addEventListener("install", (e) => {
