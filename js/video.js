@@ -91,6 +91,11 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     ctx.fillStyle = "rgba(214,222,255,0.6)";
     ctx.font = `700 ${9.5 * u}px ${FONT}`;
     spaced(ctx, `BOROBUDUR MARATHON 2026 · ${d.short}`, 20 * u, 38 * u, 1.5 * u);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(214,222,255,0.4)";
+    ctx.font = `600 ${8 * u}px ${FONT}`;
+    ctx.fillText("SIMULASI TIDAK RESMI", 340 * u, 38 * u);
+    ctx.textAlign = "left";
     let x = 20 * u;
     ctx.font = `800 ${(multi ? 26 : 36) * u}px ${FONT}`;
     sels.forEach((s, n) => {
@@ -208,7 +213,9 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     }
     ctx.font = `600 ${10 * u}px ${FONT}`;
     ctx.fillStyle = "rgba(214,222,255,0.45)";
-    ctx.fillText(location.host || "bormar replay", W / 2, (multi ? 215 + sels.length * 82 : 440) * u);
+    const fy = (multi ? 215 + sels.length * 82 : 440) * u;
+    ctx.fillText(location.host || "bormar replay", W / 2, fy);
+    ctx.fillText("Simulasi tidak resmi · hanya untuk hiburan", W / 2, fy + 15 * u);
     ctx.globalAlpha = 1;
   }
 

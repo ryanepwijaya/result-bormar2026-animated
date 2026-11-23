@@ -2,6 +2,8 @@
 
 PWA yang menganimasikan posisi pelari Borobudur Marathon 2026 di antara seluruh peserta. User memasukkan nomor bib (cukup angkanya), lalu titiknya bersinar dan berlari di rute bersama semua pelari lain (FM, HM, 10K). Bisa membandingkan sampai 3 bib dari kategori yang sama (mode VS), masing-masing dengan warna berbeda.
 
+> Bukan aplikasi resmi Borobudur Marathon. Ini simulasi buatan penggemar untuk hiburan, dan tidak boleh dipakai sebagai acuan hasil atau keperluan resmi apa pun.
+
 Aplikasi ini sepenuhnya statis: tidak ada server, tidak ada build step. Cukup deploy folder ini ke Vercel.
 
 ## Struktur
