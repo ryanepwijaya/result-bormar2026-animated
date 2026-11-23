@@ -1,5 +1,5 @@
 // Bump VERSION whenever app files or data change.
-const VERSION = "bormar-replay-v1";
+const VERSION = "bormar-replay-v2";
 const ASSETS = [
   "./", "index.html", "css/app.css",
   "js/app.js", "js/sim.js", "js/render.js", "js/video.js",

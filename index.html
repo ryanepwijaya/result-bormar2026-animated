@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Bormar 2026 Replay: Di mana posisimu?</title>
-  <meta name="description" content="Replay animasi posisi pelari Borobudur Marathon 2026 berdasarkan nomor bib." />
+  <meta name="description" content="Replay animasi posisi pelari Borobudur Marathon 2026 berdasarkan nomor bib. Bandingkan sampai 3 pelari." />
   <meta name="theme-color" content="#0b0f1d" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -20,15 +20,16 @@
         <span>BORMAR 2026 · REPLAY</span>
       </div>
       <h1>Di mana posisimu<br />sepanjang lomba?</h1>
-      <p class="lead">Masukkan nomor bib. Titikmu akan bersinar dan berlari bersama seluruh peserta, dari start sampai finish.</p>
+      <p class="lead">Masukkan nomor bib. Titikmu akan bersinar dan berlari bersama seluruh peserta. Tambahkan sampai 3 bib untuk adu posisi.</p>
 
       <form id="search-form" class="search-form" autocomplete="off">
-        <input id="bib-input" inputmode="text" placeholder="Nomor bib, mis. B10404" aria-label="Nomor bib" maxlength="12" />
+        <input id="bib-input" inputmode="numeric" placeholder="Nomor bib, mis. 10404" aria-label="Nomor bib" maxlength="12" />
         <button type="submit" id="search-btn" disabled>Memuat…</button>
       </form>
       <div id="search-msg" class="msg" role="status"></div>
 
-      <div id="result-card" class="card hidden"></div>
+      <div id="picked" class="picked"></div>
+      <button id="play-cta" class="primary play-cta hidden">▶ Putar Replay</button>
 
       <p class="foot">
         Data: hasil resmi Borobudur Marathon 2026 (FM, HM, 10K). Semua pelari diasumsikan start di wave 1,
@@ -47,7 +48,7 @@
         <div class="who-bib" id="who-bib">–</div>
         <div class="who-cat" id="who-cat">–</div>
       </div>
-      <button id="share-btn" class="share-btn">
+      <button id="share-btn" class="share-btn" aria-label="Buat video">
         <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3v12M7 8l5-5 5 5M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Video</span>
       </button>
@@ -57,81 +58,57 @@
       <div class="map-wrap" id="map-wrap">
         <canvas id="map"></canvas>
         <div id="banner" class="banner hidden"></div>
-        <div id="bf-badge" class="bf-badge hidden">BLACK FLAG 09:45</div>
-        <div class="legend">
-          <span><i class="lg sel"></i>Kamu</span>
-          <span><i class="lg run"></i>Berlari</span>
-          <span><i class="lg stop"></i>Berhenti</span>
-        </div>
+        <div id="bf-badge" class="bf-badge hidden">BLACK FLAG</div>
         <div class="clock-overlay">
           <div class="clock" id="clock">04:15:00</div>
           <div class="elapsed" id="elapsed">0:00:00</div>
         </div>
       </div>
 
-      <aside class="side">
-        <div class="hud">
-          <div class="status-row">
-            <span id="status-chip" class="chip">Berlari</span>
-            <span id="km-text" class="km-text">KM 0,0</span>
-          </div>
-          <div class="progress"><div id="progress-bar"></div></div>
-
-          <div class="stat-grid">
-            <div class="stat big">
-              <div class="label">Posisi</div>
-              <div class="value"><span id="rank">–</span><small id="rank-total"></small></div>
-            </div>
-            <div class="stat big">
-              <div class="label">Sekitar ±100 m</div>
-              <div class="value"><span id="crowd-label">–</span><small id="crowd-n"></small></div>
-            </div>
-            <div class="stat big">
-              <div class="label">Pace segmen</div>
-              <div class="value"><span id="pace">–</span><small>/km</small></div>
-            </div>
-            <div class="stat">
-              <div class="label">Di depan</div>
-              <div class="value" id="ahead">–</div>
-            </div>
-            <div class="stat">
-              <div class="label">Di belakang</div>
-              <div class="value" id="behind">–</div>
-            </div>
-            <div class="stat">
-              <div class="label">Ke terdepan</div>
-              <div class="value" id="gap">–</div>
-            </div>
-          </div>
-          <div class="note" id="est-note"></div>
-        </div>
-
-        <div class="controls">
+      <aside class="side" id="side">
+        <!-- always visible -->
+        <div class="minibar">
+          <button id="play-btn" class="play-btn" aria-label="Putar/jeda">
+            <svg id="ic-play" viewBox="0 0 24 24" width="20" height="20"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg>
+            <svg id="ic-pause" viewBox="0 0 24 24" width="20" height="20" class="hidden"><path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="currentColor"/></svg>
+          </button>
           <div class="timeline">
             <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Waktu" />
             <div id="markers" class="markers"></div>
           </div>
-          <div class="mk-legend" id="mk-legend"></div>
-          <div class="ctrl-row">
-            <button id="play-btn" class="play-btn" aria-label="Putar/jeda">
-              <svg id="ic-play" viewBox="0 0 24 24" width="22" height="22"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg>
-              <svg id="ic-pause" viewBox="0 0 24 24" width="22" height="22" class="hidden"><path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="currentColor"/></svg>
-            </button>
-            <div class="speeds" id="speeds">
-              <button data-s="30">30×</button>
-              <button data-s="60">60×</button>
-              <button data-s="120" class="on">120×</button>
-              <button data-s="300">300×</button>
-            </div>
-          </div>
-          <div class="jumps" id="jumps"></div>
+          <button id="speed-btn" class="speed-btn" aria-label="Kecepatan">300×</button>
+          <button id="info-btn" class="info-btn" aria-label="Info" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
+        <div class="mini-chips" id="mini-chips"></div>
 
-        <details class="card detail" id="detail">
-          <summary>Detail hasil &amp; checkpoint</summary>
-          <div id="detail-body"></div>
-        </details>
-        <p class="foot small">Semua pelari diasumsikan start di wave 1 (gun time). Posisi di antara checkpoint diinterpolasi.</p>
+        <!-- collapsible on mobile -->
+        <div class="sheet" id="sheet">
+          <div id="runner-cards"></div>
+          <div id="vs-box" class="vs-box hidden"></div>
+
+          <form id="add-form" class="add-form" autocomplete="off">
+            <input id="add-input" inputmode="numeric" placeholder="+ Bandingkan bib lain" maxlength="12" aria-label="Tambah bib pembanding" />
+            <button type="submit">Tambah</button>
+          </form>
+          <div id="add-msg" class="msg small"></div>
+
+          <div class="jumps" id="jumps"></div>
+          <div class="mk-legend" id="mk-legend"></div>
+          <div class="legend">
+            <span><i class="lg run"></i>Pelari lain</span>
+            <span><i class="lg stop"></i>Berhenti</span>
+            <span><i class="lg cp"></i>Checkpoint</span>
+            <span><i class="lg cop"></i>Cut-off (C1–C3)</span>
+          </div>
+
+          <details class="card detail" id="detail">
+            <summary>Detail checkpoint</summary>
+            <div id="detail-body"></div>
+          </details>
+          <p class="foot small">Semua pelari diasumsikan start di wave 1 (gun time). Posisi di antara checkpoint diinterpolasi.</p>
+        </div>
       </aside>
     </div>
   </section>

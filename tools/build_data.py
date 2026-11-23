@@ -147,7 +147,8 @@ def build(cat, wb):
         bib = r[col["Bib No"]]
         if bib is None:
             continue
-        bib = str(bib).strip()
+        # bib letter prefix = registration channel; numbers alone are unique
+        bib = re.sub(r"^[A-Za-z]+", "", str(bib).strip())
         status = str(r[col["Status"]] or "").strip()
         st = STATUS.get(status, 1)
         F = sec(r[col["Time"]])

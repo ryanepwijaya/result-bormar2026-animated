@@ -3,6 +3,8 @@
 
 export const ST = { FIN: 0, QRY: 1, DNF: 2, DQ: 3, DNS: 4 };
 export const STATE = { RUN: 0, EST: 1, FIN: 2, STOP: 3 };
+// why a runner's dot stops: finish, black flag, closed cut-off point, or simply no more data
+export const REASON = { FIN: 0, BF: 1, COP: 2, DATA: 3 };
 
 export class Race {
   constructor(d) {
@@ -28,6 +30,7 @@ export class Race {
     this.endState = new Uint8Array(this.n);  // FIN or STOP
     this.lastRealT = new Float64Array(this.n); // last time backed by real data
     this.finishT = new Float64Array(this.n).fill(Infinity);
+    this.reason = new Uint8Array(this.n).fill(REASON.DATA);
 
     for (let i = 0; i < this.n; i++) {
       off[i] = kmA.length;
@@ -48,6 +51,7 @@ export class Race {
         this.endT[i] = tA[last];
         this.endState[i] = STATE.FIN;
         this.finishT[i] = tA[last];
+        this.reason[i] = REASON.FIN;
       } else if (this.bf != null && st === ST.QRY && last - off[i] >= 1) {
         // Black-flag race (FM): keep moving at last segment pace until 09:45,
         // but never past the next (unrecorded) checkpoint or a closed COP.
@@ -56,17 +60,22 @@ export class Race {
         const pace = (k1 - k0) / (t1 - t0); // km per second
         const lastK = this.km.indexOf(k1);
         let cap = lastK >= 0 && lastK < this.K - 1 ? this.km[lastK + 1] - 0.05 : k1;
+        let why = REASON.DATA;
         for (const c of d.cops) {
           if (c.km <= k1 || c.km >= cap) continue;
           const reach = t1 + (c.km - k1) / pace;
-          if (this.start + reach > c.close) { cap = c.km; break; }
+          if (this.start + reach > c.close) { cap = c.km; why = REASON.COP; break; }
         }
-        let stopT = t1 + (cap - k1) / pace;
-        if (this.bf < stopT) stopT = Math.max(t1, this.bf);
+        const capT = t1 + (cap - k1) / pace;
+        let stopT;
+        if (this.bf < capT) { stopT = Math.max(t1, this.bf); why = REASON.BF; }
+        else if (why === REASON.COP) stopT = capT;
+        else stopT = t1; // would have reached the next checkpoint before 09:45: no evidence, freeze at last record
         const stopK = k1 + (stopT - t1) * pace;
         if (stopT > t1 + 1) { kmA.push(stopK); tA.push(stopT); }
         this.endT[i] = stopT;
         this.endState[i] = STATE.STOP;
+        this.reason[i] = why;
       } else {
         this.endT[i] = tA[last];
         this.endState[i] = STATE.STOP;
@@ -89,7 +98,7 @@ export class Race {
   }
 
   find(bib) {
-    const key = String(bib).trim().toUpperCase();
+    const key = normBib(bib);
     if (this.index.has(key)) return { i: this.index.get(key) };
     if (this.noshow.has(key)) return { noshow: true, st: this.noshow.get(key) };
     return null;
@@ -194,12 +203,27 @@ export class Race {
     return out;
   }
 
+  // time at which runner i reached km (null if never)
+  timeAtKm(i, km) {
+    const a = this.off[i], b = this.off[i + 1] - 1;
+    if (km <= 0) return 0;
+    for (let j = a; j < b; j++) {
+      const k0 = this.pKm[j], k1 = this.pKm[j + 1];
+      if (k0 <= km && k1 >= km && k1 > k0) return this.pT[j] + (km - k0) / (k1 - k0) * (this.pT[j + 1] - this.pT[j]);
+    }
+    return null;
+  }
+
   // number of runners still active on course at time t
   activeAt(t) {
     let c = 0;
     for (let i = 0; i < this.n; i++) if (t < this.endT[i]) c++;
     return c;
   }
+}
+
+export function normBib(b) {
+  return String(b).trim().replace(/^[A-Za-z]+/, "").replace(/\s+/g, "").toUpperCase();
 }
 
 export function fmtClock(sec) {

@@ -1,9 +1,11 @@
-import { Race, STATE, ST, fmtClock, fmtHM, fmtDur, fmtPace, fmtKm, nf, crowdLabel } from "./sim.js";
-import { Scene, fitLayout } from "./render.js";
+import { Race, STATE, ST, REASON, fmtClock, fmtHM, fmtDur, fmtPace, fmtKm, nf, crowdLabel, normBib } from "./sim.js";
+import { Scene, fitLayout, RUNNER_COLORS } from "./render.js";
 import { recordVideo } from "./video.js";
 
 const $ = (id) => document.getElementById(id);
 const CATS = ["fm", "hm", "10k"];
+const MAX = 3;
+const SPEEDS = [30, 60, 120, 300];
 const races = {};
 const STATUS_TXT = { 0: "Finisher", 1: "Tidak finish", 2: "DNF", 3: "DQ", 4: "DNS" };
 
@@ -15,62 +17,75 @@ async function load() {
   $("search-btn").textContent = "Cari";
   const q = new URLSearchParams(location.search).get("bib");
   if (q) {
-    $("bib-input").value = q;
-    search(q, true);
+    for (const b of q.split(",").slice(0, MAX)) addPick(b, true);
+    if (P.items.length) openReplay();
   }
 }
 
-// ---------------- search ----------------
-function search(bib, autoplay = false) {
-  const msg = $("search-msg");
-  msg.className = "msg";
-  msg.textContent = "";
-  const key = String(bib).trim();
-  if (!key) return;
-  const hits = [];
+// ---------------- picking (search screen) ----------------
+const P = { race: null, items: [] }; // items: runner index in P.race
+
+function lookup(bib) {
+  const key = normBib(bib);
+  if (!key) return { err: "Masukkan nomor bib." };
+  let noshow = null;
   for (const c of CATS) {
-    const r = races[c];
-    const h = r.find(key);
-    if (h) hits.push({ race: r, ...h });
+    const h = races[c].find(key);
+    if (h && !h.noshow) return { race: races[c], i: h.i, key };
+    if (h && h.noshow) noshow = { race: races[c], st: h.st };
   }
-  const card = $("result-card");
-  if (!hits.length) {
-    card.classList.add("hidden");
-    msg.className = "msg err";
-    msg.textContent = `Bib "${key.toUpperCase()}" tidak ditemukan di FM, HM, maupun 10K.`;
-    return;
-  }
-  const h = hits.find((x) => !x.noshow) || hits[0];
-  if (h.noshow) {
-    card.classList.remove("hidden");
-    card.innerHTML = `
-      <div class="rc-head"><div class="rc-bib">${esc(key.toUpperCase())}</div><div class="rc-cat">${esc(h.race.d.name)}</div></div>
-      <p class="muted" style="margin:10px 0 0">Bib ini tidak punya catatan checkpoint (${STATUS_TXT[h.st] || "tanpa data"}), jadi tidak bisa diputar ulang.</p>`;
-    return;
-  }
-  renderResultCard(h.race, h.i);
-  if (autoplay) openReplay(h.race, h.i);
+  if (noshow) return { err: `Bib ${key} (${noshow.race.d.name}) tidak punya catatan checkpoint (${STATUS_TXT[noshow.st] || "tanpa data"}), jadi tidak bisa diputar.` };
+  return { err: `Bib ${key} tidak ditemukan di FM, HM, maupun 10K.` };
 }
 
-function renderResultCard(race, i) {
-  const d = race.d;
-  const st = d.st[i];
-  const card = $("result-card");
-  card.classList.remove("hidden");
-  const fin = st === ST.FIN;
-  const pill = fin ? `<span class="st-pill st-fin">FINISHER</span>` : `<span class="st-pill st-stop">${st === ST.DNF ? "DNF" : "TIDAK FINISH"}</span>`;
-  const time = fin ? fmtDur(race.finishT[i]) : "–";
-  const lastKm = lastRealKm(race, i);
-  card.innerHTML = `
-    <div class="rc-head"><div class="rc-bib">${esc(d.bib[i])}</div><div class="rc-cat">${esc(d.name)}</div></div>
-    <div style="margin-top:8px">${pill}</div>
-    <div class="rc-row">
-      ${fin ? `<div><span class="k">Waktu</span><span class="v">${time}</span></div>` : `<div><span class="k">Checkpoint terakhir</span><span class="v">KM ${fmtKm(lastKm)}</span></div>`}
-      ${fin && d.pos[i] ? `<div><span class="k">Posisi resmi</span><span class="v">#${nf.format(d.pos[i])}</span></div>` : ""}
-      ${fin && d.cat[i] ? `<div><span class="k">${esc(d.cat[i])}</span><span class="v">#${nf.format(d.catPos[i])}</span></div>` : ""}
-    </div>
-    <button class="primary play-cta" id="play-cta">▶ Putar Replay</button>`;
-  $("play-cta").onclick = () => openReplay(race, i);
+// Returns error string or null.
+function tryAdd(target, bib) {
+  const h = lookup(bib);
+  if (h.err) return h.err;
+  if (target.items.includes(h.i) && target.race === h.race) return `Bib ${h.key} sudah ada.`;
+  if (target.items.length >= MAX) return `Maksimal ${MAX} bib.`;
+  if (target.race && target.items.length && target.race !== h.race) {
+    return `Bib ${h.key} ikut ${h.race.d.name}. Pembanding harus dari kategori yang sama (${target.race.d.name}).`;
+  }
+  target.race = h.race;
+  target.items.push(h.i);
+  return null;
+}
+
+function addPick(bib, silent = false) {
+  const err = tryAdd(P, bib);
+  const msg = $("search-msg");
+  msg.className = err ? "msg err" : "msg";
+  msg.textContent = err && !silent ? err : "";
+  renderPicks();
+  return !err;
+}
+
+function renderPicks() {
+  const box = $("picked");
+  box.innerHTML = "";
+  if (!P.items.length) P.race = null;
+  P.items.forEach((i, n) => {
+    const race = P.race, d = race.d, col = RUNNER_COLORS[n];
+    const fin = d.st[i] === ST.FIN;
+    const el = document.createElement("div");
+    el.className = "pick";
+    el.style.setProperty("--c", col.hex);
+    el.innerHTML = `<span class="dot"></span>
+      <div class="main">
+        <div class="bib">${esc(d.bib[i])}<span class="st-pill ${fin ? "st-fin" : "st-stop"}">${fin ? "FINISH" : (d.st[i] === ST.DNF ? "DNF" : "TIDAK FINISH")}</span></div>
+        <div class="sub">${esc(d.name)} · ${fin ? `<b>${fmtDur(race.finishT[i])}</b>${d.pos[i] ? ` · #${nf.format(d.pos[i])}` : ""}` : `terakhir KM <b>${fmtKm(lastRealKm(race, i))}</b>`}</div>
+      </div>
+      <button class="rm" aria-label="Hapus">×</button>`;
+    el.querySelector(".rm").onclick = () => { P.items.splice(n, 1); renderPicks(); };
+    box.appendChild(el);
+  });
+  const cta = $("play-cta");
+  cta.classList.toggle("hidden", !P.items.length);
+  cta.textContent = P.items.length > 1 ? `▶ Putar VS (${P.items.length} pelari)` : "▶ Putar Replay";
+  const inp = $("bib-input");
+  inp.placeholder = P.items.length ? (P.items.length < MAX ? "+ Tambah bib pembanding" : "Maksimal 3 bib") : "Nomor bib, mis. 10404";
+  inp.disabled = P.items.length >= MAX;
 }
 
 function lastRealKm(race, i) {
@@ -79,7 +94,6 @@ function lastRealKm(race, i) {
   for (let k = 0; k < K; k++) if (race.d.t[i * K + k] >= 0) km = race.km[k];
   return km;
 }
-
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -87,32 +101,29 @@ function esc(s) {
 $("search-form").addEventListener("submit", (e) => {
   e.preventDefault();
   if ($("search-btn").disabled) return;
-  search($("bib-input").value);
+  if (addPick($("bib-input").value)) $("bib-input").value = "";
 });
+$("play-cta").onclick = () => openReplay();
 
 // ---------------- replay ----------------
 const R = {
-  race: null, scene: null, sel: -1, t: 0, playing: false, speed: 120,
+  race: null, scene: null, sels: [], t: 0, playing: false, speed: 300,
   W: 0, H: 0, dpr: 1, unit: 1, L: null, staticLayer: null,
-  raf: 0, last: 0, lastHud: 0, events: [], bannerTimer: 0,
+  raf: 0, last: 0, lastHud: 0, events: [], bannerTimer: 0, cards: [],
 };
 
-function openReplay(race, i) {
-  R.race = race;
-  R.sel = i;
-  R.scene = new Scene(race);
+function openReplay() {
+  R.race = P.race;
+  R.scene = new Scene(R.race);
+  R.events = buildEvents(R.race);
   R.t = 0;
-  R.events = buildEvents(race);
-  history.replaceState(null, "", `?bib=${encodeURIComponent(race.d.bib[i])}`);
-
-  $("who-bib").textContent = race.d.bib[i];
-  $("who-cat").textContent = `${race.d.name} · start ${race.d.waves[0]} (wave 1)`;
   $("screen-search").classList.remove("active");
   $("screen-replay").classList.add("active");
   $("bf-badge").classList.add("hidden");
   $("banner").classList.add("hidden");
-  buildMarkers();
-  buildDetail();
+  $("side").classList.remove("open");
+  setSpeed(R.speed);
+  syncSelection();
   resize();
   setPlaying(true);
   cancelAnimationFrame(R.raf);
@@ -120,14 +131,49 @@ function openReplay(race, i) {
   R.raf = requestAnimationFrame(loop);
 }
 
+// rebuild everything that depends on the selected runners
+function syncSelection() {
+  const race = R.race;
+  R.sels = P.items.map((i, n) => ({ i, color: RUNNER_COLORS[n] }));
+  history.replaceState(null, "", `?bib=${P.items.map((i) => race.d.bib[i]).join(",")}`);
+  $("who-bib").innerHTML = R.sels.map((s) => `<span style="color:${s.color.hex}">${esc(race.d.bib[s.i])}</span>`).join('<span class="vs">vs</span>');
+  $("who-cat").textContent = `${race.d.name} · semua start ${race.d.waves[0]} (wave 1)`;
+  $("add-form").classList.toggle("hidden", R.sels.length >= MAX);
+  buildCards();
+  buildMarkers();
+  buildDetail();
+  R.lastHud = 0;
+}
+
 function closeReplay() {
   setPlaying(false);
   cancelAnimationFrame(R.raf);
   $("screen-replay").classList.remove("active");
   $("screen-search").classList.add("active");
-  history.replaceState(null, "", location.pathname);
+  renderPicks();
 }
 $("back-btn").onclick = closeReplay;
+$("info-btn").onclick = () => {
+  const side = $("side");
+  side.classList.toggle("open");
+  $("info-btn").setAttribute("aria-expanded", side.classList.contains("open"));
+  requestAnimationFrame(resize);
+};
+
+$("add-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const err = tryAdd(P, $("add-input").value);
+  const msg = $("add-msg");
+  msg.className = err ? "msg small err" : "msg small";
+  msg.textContent = err || "";
+  if (!err) { $("add-input").value = ""; syncSelection(); }
+});
+
+function removeSel(n) {
+  if (P.items.length <= 1) return;
+  P.items.splice(n, 1);
+  syncSelection();
+}
 
 function buildEvents(race) {
   const d = race.d, ev = [];
@@ -143,89 +189,115 @@ function showBanner(ev) {
   const b = $("banner");
   clearTimeout(R.bannerTimer);
   b.className = "banner" + (ev.type === "bf" ? " bf" : "");
-  if (ev.type === "bf") {
-    b.innerHTML = `BLACK FLAG · 09:45<small>Lomba dihentikan karena cuaca (WBGT ≥ 32,3°C). ±${nf.format(ev.n)} pelari masih di lintasan.</small>`;
-  } else {
-    b.textContent = ev.text;
-  }
-  R.bannerTimer = setTimeout(() => b.classList.add("hidden"), ev.type === "bf" ? 5000 : 3200);
+  if (ev.type === "bf") b.innerHTML = `BLACK FLAG · 09:45<small>Lomba dihentikan (WBGT ≥ 32,3°C). ±${nf.format(ev.n)} pelari masih di lintasan.</small>`;
+  else b.textContent = ev.text;
+  R.bannerTimer = setTimeout(() => b.classList.add("hidden"), ev.type === "bf" ? 4500 : 2800);
 }
 
-function selMoments() {
-  const race = R.race, i = R.sel;
-  const end = race.endT[i];
-  const fin = race.endState[i] === STATE.FIN;
-  // time when runner passes half distance
-  let half = null;
-  const a = race.off[i], b = race.off[i + 1] - 1, target = race.dist / 2;
-  for (let j = a; j < b; j++) {
-    if (race.pKm[j] <= target && race.pKm[j + 1] >= target) {
-      half = race.pT[j] + (target - race.pKm[j]) / (race.pKm[j + 1] - race.pKm[j]) * (race.pT[j + 1] - race.pT[j]);
-      break;
-    }
-  }
-  return { end, fin, half };
+function momentsOf(i) {
+  const race = R.race;
+  return { end: race.endT[i], fin: race.endState[i] === STATE.FIN };
 }
 
 function buildMarkers() {
   const race = R.race, box = $("markers"), jumps = $("jumps");
   box.innerHTML = "";
   jumps.innerHTML = "";
-  const items = [];
-  const add = (t, cls, label, title) => items.push({ t, cls, label, title });
-  race.d.cops.forEach((c, k) => {
-    const t = c.close - race.d.start;
-    if (t > 0 && t < race.tMax) add(t, "cop", `C${k + 1}`, `${c.name} ditutup ${fmtHM(c.close)}`);
-  });
-  if (race.bf != null) add(race.bf, "bf", "BF", "Black flag 09:45");
-  const m = selMoments();
-  add(m.end, "me", "◆", m.fin ? "Kamu finish" : "Kamu berhenti");
-  for (const it of items) {
+  const mk = (t, cls, title, color) => {
     const el = document.createElement("span");
-    el.className = "mk " + it.cls;
-    el.style.left = `${(it.t / race.tMax) * 100}%`;
-    el.title = it.title;
-    el.onclick = () => seek(it.t);
+    el.className = "mk " + cls;
+    el.style.left = `${(t / race.tMax) * 100}%`;
+    if (color) el.style.setProperty("--c", color);
+    el.title = title;
+    el.onclick = () => seek(t);
     box.appendChild(el);
-  }
-  $("mk-legend").innerHTML =
-    `<span><i class="cop"></i>COP ditutup</span>` +
-    (race.bf != null ? `<span><i class="bf"></i>Black flag</span>` : "") +
-    `<span><i class="me"></i>${m.fin ? "Kamu finish" : "Kamu berhenti"}</span>`;
+  };
+  race.d.cops.forEach((c) => {
+    const t = c.close - race.d.start;
+    if (t > 0 && t < race.tMax) mk(t, "cop", `${c.name} ditutup ${fmtHM(c.close)}`);
+  });
+  if (race.bf != null) mk(race.bf, "bf", "Black flag 09:45");
+  R.sels.forEach((s) => {
+    const m = momentsOf(s.i);
+    mk(m.end, "me", `${race.d.bib[s.i]} ${m.fin ? "finish" : "berhenti"}`, s.color.hex);
+  });
 
-  const jb = (label, t, cls = "") => {
+  const jb = (label, t, color) => {
     const b = document.createElement("button");
     b.textContent = label;
-    if (cls) b.className = cls;
+    if (color) { b.className = "me"; b.style.setProperty("--c", color); }
     b.onclick = () => seek(t);
     jumps.appendChild(b);
   };
   jb("⟲ Awal", 0);
-  if (m.half != null) jb("Separuh jarakmu", Math.max(0, m.half - 60));
   if (race.bf != null) jb("Black flag", Math.max(0, race.bf - 90));
-  jb(m.fin ? "◆ Momen finish" : "◆ Momen berhenti", Math.max(0, m.end - 120), "me");
+  R.sels.forEach((s) => {
+    const m = momentsOf(s.i);
+    jb(`◆ ${race.d.bib[s.i]} ${m.fin ? "finish" : "berhenti"}`, Math.max(0, m.end - 120), s.color.hex);
+  });
+  $("mk-legend").innerHTML =
+    `<span><i class="cop"></i>COP ditutup</span>` +
+    (race.bf != null ? `<span><i class="bf"></i>Black flag</span>` : "") +
+    `<span><i class="me"></i>Momen finish/berhenti</span>`;
+}
+
+function buildCards() {
+  const race = R.race, box = $("runner-cards"), chips = $("mini-chips");
+  box.innerHTML = "";
+  chips.innerHTML = "";
+  R.cards = R.sels.map((s, n) => {
+    const el = document.createElement("div");
+    el.className = "rcard";
+    el.style.setProperty("--c", s.color.hex);
+    el.innerHTML = `
+      <div class="rc-top"><span class="dot"></span><span class="bib">${esc(race.d.bib[s.i])}</span>
+        <span class="chip" data-k="chip">–</span>
+        ${R.sels.length > 1 ? `<button class="rm" aria-label="Hapus">×</button>` : ""}</div>
+      <div class="rc-km"><span data-k="km">KM 0</span><div class="bar"><div data-k="bar"></div></div></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="label">Posisi</div><div class="value stack" data-k="rank">–</div></div>
+        <div class="stat"><div class="label">Sekitar ±100 m</div><div class="value stack" data-k="crowd">–</div></div>
+        <div class="stat"><div class="label">Pace</div><div class="value" data-k="pace">–</div></div>
+        <div class="stat"><div class="label">Di depan</div><div class="value" data-k="ahead">–</div></div>
+        <div class="stat"><div class="label">Di belakang</div><div class="value" data-k="behind">–</div></div>
+        <div class="stat"><div class="label">Ke terdepan</div><div class="value" data-k="gap">–</div></div>
+      </div>
+      <div class="rc-note" data-k="note"></div>`;
+    const rm = el.querySelector(".rm");
+    if (rm) rm.onclick = () => removeSel(n);
+    box.appendChild(el);
+    const ch = document.createElement("div");
+    ch.className = "mchip";
+    ch.style.setProperty("--c", s.color.hex);
+    ch.innerHTML = `<i></i>${R.sels.length >= 3 ? "" : `<span>${esc(race.d.bib[s.i])}</span>`}<span class="r" data-k="m">–</span>`;
+    chips.appendChild(ch);
+    const q = (root, k) => root.querySelector(`[data-k="${k}"]`);
+    return {
+      chip: q(el, "chip"), km: q(el, "km"), bar: q(el, "bar"), rank: q(el, "rank"), crowd: q(el, "crowd"),
+      pace: q(el, "pace"), ahead: q(el, "ahead"), behind: q(el, "behind"), gap: q(el, "gap"), note: q(el, "note"),
+      mchip: ch, m: q(ch, "m"),
+    };
+  });
+  $("vs-box").classList.toggle("hidden", R.sels.length < 2);
 }
 
 function buildDetail() {
-  const race = R.race, i = R.sel, d = race.d;
-  const fin = d.st[i] === ST.FIN;
-  const rows = race.checkpointRanks(i);
-  const anyEst = rows.some((r) => r && r.est);
-  let html = `<div class="detail-meta">
-    <div>Status<b>${fin ? "Finisher" : STATUS_TXT[d.st[i]]}</b></div>
-    ${fin ? `<div>Waktu resmi<b>${fmtDur(race.finishT[i])}</b></div>` : ""}
-    ${fin && d.pos[i] ? `<div>Posisi resmi<b>#${nf.format(d.pos[i])}</b></div>` : ""}
-    ${fin && d.cat[i] ? `<div>${esc(d.cat[i])}<b>#${nf.format(d.catPos[i])}</b></div>` : ""}
-  </div>
-  <table class="cp"><thead><tr><th>KM</th><th>Jam*</th><th>Tempuh</th><th>Peringkat</th></tr></thead><tbody>`;
-  for (const r of rows) {
-    if (!r) continue;
-    const label = r.k === race.K - 1 ? "Finish" : fmtKm(r.km, r.km % 1 ? 1 : 0);
-    html += `<tr><td class="${r.est ? "est" : ""}">${label}${r.est ? "†" : ""}</td><td>${fmtClock(d.start + r.t)}</td><td>${fmtDur(r.t)}</td><td>#${nf.format(r.rank)} <span class="muted">/ ${nf.format(r.total)}</span></td></tr>`;
+  const race = R.race, d = race.d;
+  const per = R.sels.map((s) => race.checkpointRanks(s.i));
+  const K = race.K;
+  let anyEst = false;
+  let html = `<table class="cp"><thead><tr><th>KM</th>${R.sels.map((s) => `<th style="--c:${s.color.hex}"><i></i>${esc(d.bib[s.i])}</th>`).join("")}</tr></thead><tbody>`;
+  for (let k = 1; k < K; k++) {
+    const est = d.kmEst[k];
+    const cells = per.map((rows) => rows[k - 1]);
+    if (cells.every((c) => !c)) continue;
+    if (est) anyEst = true;
+    const label = k === K - 1 ? "Finish" : fmtKm(race.km[k], race.km[k] % 1 ? 1 : 0);
+    html += `<tr><td class="${est ? "est" : ""}">${label}${est ? "†" : ""}</td>` +
+      cells.map((c) => c ? `<td>${fmtDur(c.t)}<small>#${nf.format(c.rank)} · ${fmtHM(d.start + c.t)}</small></td>` : `<td class="muted">–</td>`).join("") + `</tr>`;
   }
   html += `</tbody></table>
-  <p class="foot small">* Jam dihitung dari start wave 1 (${d.waves[0]}).${anyEst ? " † Checkpoint KM 5,6 tidak ada di data resmi; waktunya diestimasi." : ""}
-  Peringkat checkpoint = urutan waktu tempuh di antara pelari yang tercatat melewati titik itu.</p>`;
+  <p class="foot small">Waktu tempuh dari start wave 1 (${d.waves[0]}); baris kecil = peringkat di checkpoint · jam.${anyEst ? " † KM 5,6 tidak ada di data resmi; waktunya diestimasi." : ""}</p>`;
   $("detail-body").innerHTML = html;
 }
 
@@ -234,36 +306,34 @@ function resize() {
   const wrap = $("map-wrap"), cv = $("map");
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (!w || !h) return;
   R.dpr = dpr;
   R.W = cv.width = Math.round(w * dpr);
   R.H = cv.height = Math.round(h * dpr);
   const css = Math.min(w, h);
-  R.unit = dpr * Math.min(1.35, Math.max(0.8, css / 520));
+  R.unit = dpr * Math.min(1.35, Math.max(0.85, css / 480));
   const mobile = w < 900;
-  const top = (mobile ? 46 : 58) * dpr, bottom = 26 * dpr;
-  R.L = fitLayout(R.scene.geom, 0, top, R.W, R.H - top - bottom, 16 * R.unit);
+  const top = (mobile ? 30 : 50) * dpr, bottom = 8 * dpr;
+  R.L = fitLayout(R.scene.geom, 0, top, R.W, R.H - top - bottom, 14 * R.unit);
   R.staticLayer = R.scene.buildStatic(R.W, R.H, R.L, R.unit);
 }
-window.addEventListener("resize", () => { resize(); });
+window.addEventListener("resize", () => resize());
 
 function setPlaying(p) {
   R.playing = p;
   $("ic-play").classList.toggle("hidden", p);
   $("ic-pause").classList.toggle("hidden", !p);
 }
+function setSpeed(s) {
+  R.speed = s;
+  $("speed-btn").textContent = `${s}×`;
+}
 $("play-btn").onclick = () => {
   if (!R.playing && R.t >= R.race.tMax) R.t = 0;
   setPlaying(!R.playing);
 };
-$("speeds").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  R.speed = Number(b.dataset.s);
-  [...$("speeds").children].forEach((x) => x.classList.toggle("on", x === b));
-});
-$("scrub").addEventListener("input", (e) => {
-  seek((Number(e.target.value) / 1000) * R.race.tMax, true);
-});
+$("speed-btn").onclick = () => setSpeed(SPEEDS[(SPEEDS.indexOf(R.speed) + 1) % SPEEDS.length]);
+$("scrub").addEventListener("input", (e) => seek((Number(e.target.value) / 1000) * R.race.tMax, true));
 function seek(t, fromScrub = false) {
   R.t = Math.max(0, Math.min(R.race.tMax, t));
   R.lastHud = 0;
@@ -287,59 +357,85 @@ function loop(now) {
   const ctx = $("map").getContext("2d");
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, R.W, R.H);
-  R.scene.draw(ctx, R.L, R.unit, R.sel, R.t, R.staticLayer, now);
-
-  if (now - R.lastHud > 90) {
-    R.lastHud = now;
-    updateHud();
-  }
+  R.scene.draw(ctx, R.L, R.unit, R.sels, R.t, R.staticLayer, now);
+  if (now - R.lastHud > 100) { R.lastHud = now; updateHud(); }
   R.raf = requestAnimationFrame(loop);
 }
 
 function updateHud() {
   const race = R.race, t = R.t, d = race.d;
-  const s = race.stats(R.sel, t);
   $("clock").textContent = fmtClock(d.start + t);
-  $("elapsed").textContent = `waktu tempuh ${fmtDur(t)}`;
+  $("elapsed").textContent = fmtDur(t);
   $("bf-badge").classList.toggle("hidden", !(race.bf != null && t >= race.bf));
-
-  const chip = $("status-chip");
-  const stopped = s.state === STATE.STOP;
-  if (s.state === STATE.FIN) {
-    chip.className = "chip fin";
-    chip.textContent = `FINISH · ${fmtDur(race.finishT[R.sel])}`;
-  } else if (stopped) {
-    chip.className = "chip stop";
-    chip.textContent = `BERHENTI · ${fmtHM(d.start + race.endT[R.sel])}`;
-  } else if (s.state === STATE.EST) {
-    chip.className = "chip est";
-    chip.textContent = "ESTIMASI";
-  } else {
-    chip.className = "chip";
-    chip.textContent = t <= 0 ? "SIAP START" : "BERLARI";
-  }
-  $("km-text").textContent = `KM ${fmtKm(s.km)} / ${fmtKm(race.dist)}`;
-  $("progress-bar").style.width = `${Math.min(100, (s.km / race.dist) * 100)}%`;
-
-  $("rank").textContent = t <= 0 ? "–" : `#${nf.format(s.rank)}`;
-  $("rank-total").textContent = t <= 0 ? "" : `/ ${nf.format(s.total)}`;
-  const nearShown = s.state === STATE.FIN ? null : s.near;
-  $("crowd-label").textContent = nearShown == null ? "–" : (t <= 0 ? "Padat" : crowdLabel(nearShown));
-  $("crowd-n").textContent = nearShown == null ? "" : `${nf.format(nearShown)} org`;
-  $("ahead").textContent = t <= 0 ? "–" : nf.format(s.ahead);
-  $("behind").textContent = t <= 0 ? "–" : nf.format(s.behind);
-  $("pace").textContent = s.pace ? fmtPace(s.pace) : "–";
-  const leader = s.finished > 0 ? race.dist : s.leaderKm;
-  const gap = Math.max(0, leader - s.km);
-  $("gap").textContent = s.state === STATE.FIN || t <= 0 ? "–" : (gap < 0.05 ? "Terdepan" : `${fmtKm(gap)} km`);
-
-  let note = "";
-  if (s.state === STATE.EST) note = "Setelah checkpoint terakhirnya, posisi diestimasi dari pace terakhir (maks. sampai black flag 09:45).";
-  else if (stopped) note = race.bf != null && d.st[R.sel] === ST.QRY
-    ? "Angka posisi & sekitar dihitung saat pelari ini berhenti (estimasi, akibat black flag/cut-off)."
-    : "Angka posisi & sekitar dihitung saat pelari ini tercatat terakhir kali.";
-  $("est-note").textContent = note;
   $("scrub").value = String(Math.round((t / race.tMax) * 1000));
+  const sheetOpen = $("side").classList.contains("open") || window.innerWidth >= 900;
+
+  const stats = R.sels.map((s) => race.stats(s.i, t));
+  stats.forEach((s, n) => {
+    const c = R.cards[n], i = R.sels[n].i;
+    const stopped = s.state === STATE.STOP;
+    let chipCls = "chip", chipTxt = t <= 0 ? "SIAP" : "BERLARI";
+    if (s.state === STATE.FIN) { chipCls = "chip fin"; chipTxt = `FINISH ${fmtDur(race.finishT[i])}`; }
+    else if (stopped) {
+      chipCls = "chip stop";
+      const why = race.reason[i] === REASON.BF ? "BLACK FLAG" : race.reason[i] === REASON.COP ? "CUT-OFF" : "BERHENTI";
+      chipTxt = `${why} ${fmtHM(d.start + race.endT[i])}`;
+    }
+    else if (s.state === STATE.EST) { chipCls = "chip est"; chipTxt = "ESTIMASI"; }
+    const rankTxt = t <= 0 ? "–" : `#${nf.format(s.rank)}`;
+    // mini chip (always visible)
+    c.mchip.className = "mchip" + (stopped ? " stop" : s.state === STATE.FIN ? " fin" : "");
+    const kmTxt = R.sels.length >= 3 ? fmtKm(s.km) : `KM ${fmtKm(s.km)}`;
+    c.m.textContent = t <= 0 ? "" : (s.state === STATE.FIN ? `FIN ${rankTxt}` : `${rankTxt} · ${kmTxt}`);
+    if (!sheetOpen) return;
+    c.chip.className = chipCls; c.chip.textContent = chipTxt;
+    c.km.textContent = `KM ${fmtKm(s.km)} / ${fmtKm(race.dist)}`;
+    c.bar.style.width = `${Math.min(100, (s.km / race.dist) * 100)}%`;
+    c.rank.innerHTML = t <= 0 ? "–" : `${rankTxt}<small>/${nf.format(s.total)}</small>`;
+    c.crowd.innerHTML = s.state === STATE.FIN ? "–" : (t <= 0 ? "Padat" : `${crowdLabel(s.near)}<small>${nf.format(s.near)} org</small>`);
+    c.pace.innerHTML = s.pace ? `${fmtPace(s.pace)}<small>/km</small>` : "–";
+    c.ahead.textContent = t <= 0 ? "–" : nf.format(s.ahead);
+    c.behind.textContent = t <= 0 ? "–" : nf.format(s.behind);
+    const leader = s.finished > 0 ? race.dist : s.leaderKm;
+    const gap = Math.max(0, leader - s.km);
+    c.gap.textContent = s.state === STATE.FIN || t <= 0 ? "–" : (gap < 0.05 ? "Terdepan" : `${fmtKm(gap)} km`);
+    c.note.textContent = s.state === STATE.EST
+      ? "Setelah checkpoint terakhir, posisi diestimasi dari pace terakhir (maks. sampai 09:45)."
+      : stopped ? (race.reason[i] === REASON.DATA
+        ? "Tidak ada catatan setelah checkpoint ini; titik dibekukan di catatan terakhir."
+        : "Posisi & sekitar dihitung saat pelari ini berhenti (estimasi).") : "";
+  });
+
+  if (R.sels.length >= 2 && sheetOpen) updateVs(stats, t);
+}
+
+// Gap of each other runner relative to the first selected runner.
+function updateVs(stats, t) {
+  const race = R.race, d = race.d, base = R.sels[0], b = stats[0];
+  let html = `<div class="vs-title">VS ${esc(d.bib[base.i])}</div>`;
+  R.sels.slice(1).forEach((s, k) => {
+    const o = stats[k + 1];
+    let txt;
+    if (t <= 0) txt = "–";
+    else if (b.state === STATE.FIN && o.state === STATE.FIN) {
+      const dt = race.finishT[s.i] - race.finishT[base.i];
+      txt = dt === 0 ? "sama" : `${dt < 0 ? "lebih cepat" : "lebih lambat"} ${fmtDur(Math.abs(dt))}`;
+    } else {
+      const dk = o.km - b.km;
+      if (Math.abs(dk) < 0.01) txt = "berdampingan";
+      else {
+        // time gap: when did the trailing runner (will) reach the leader's current km
+        const leadI = dk > 0 ? s.i : base.i, trailI = dk > 0 ? base.i : s.i;
+        const tl = race.timeAtKm(leadI, Math.min(o.km, b.km));
+        const timeGap = tl != null ? t - tl : null;
+        const trailStopped = (dk > 0 ? b : o).state === STATE.STOP;
+        txt = `${dk > 0 ? "di depan" : "di belakang"} ${fmtKm(Math.abs(dk))} km` +
+          (timeGap != null && !trailStopped ? ` · ±${fmtDur(timeGap)}` : "");
+      }
+    }
+    html += `<div class="vs-row" style="--c:${s.color.hex}"><i></i><b>${esc(d.bib[s.i])}</b><span class="gap">${txt}</span></div>`;
+  });
+  $("vs-box").innerHTML = html;
 }
 
 // ---------------- video ----------------
@@ -358,13 +454,13 @@ $("share-btn").onclick = async () => {
   setPlaying(false);
   R.recording = true;
   try {
-    const out = await recordVideo($("video-canvas"), R.race, R.sel, (p) => {
+    const out = await recordVideo($("video-canvas"), R.race, R.sels, (p) => {
       $("vm-bar-fill").style.width = `${Math.round(p * 100)}%`;
       $("vm-status").textContent = `Merekam video… ${Math.round(p * 100)}%`;
     });
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     videoUrl = URL.createObjectURL(out.blob);
-    const name = `bormar2026-${R.race.d.bib[R.sel]}.${out.ext}`;
+    const name = `bormar2026-${R.sels.map((s) => R.race.d.bib[s.i]).join("-vs-")}.${out.ext}`;
     const v = $("vm-video");
     v.src = videoUrl;
     v.classList.remove("hidden");
@@ -378,7 +474,7 @@ $("share-btn").onclick = async () => {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       const sb = $("vm-share");
       sb.classList.remove("hidden");
-      sb.onclick = () => navigator.share({ files: [file], title: "Bormar 2026 Replay", text: `Replay bib ${R.race.d.bib[R.sel]} di Borobudur Marathon 2026` }).catch(() => {});
+      sb.onclick = () => navigator.share({ files: [file], title: "Bormar 2026 Replay", text: "Replay Borobudur Marathon 2026" }).catch(() => {});
     }
   } catch (err) {
     console.error(err);
@@ -389,8 +485,7 @@ $("share-btn").onclick = async () => {
 };
 $("vm-close").onclick = () => {
   $("video-modal").classList.add("hidden");
-  const v = $("vm-video");
-  v.pause();
+  $("vm-video").pause();
   if (R.wasPlaying) setPlaying(true);
 };
 
