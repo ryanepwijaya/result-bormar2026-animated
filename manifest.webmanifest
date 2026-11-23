@@ -1,0 +1,16 @@
+{
+  "name": "Bormar 2026 Replay",
+  "short_name": "Bormar Replay",
+  "description": "Replay animasi posisi pelari Borobudur Marathon 2026 berdasarkan nomor bib.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0f1d",
+  "theme_color": "#0b0f1d",
+  "lang": "id",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,4 @@
+# Source results contain participant names: never commit
+tools/source/*.xlsx
+.DS_Store
+node_modules/
