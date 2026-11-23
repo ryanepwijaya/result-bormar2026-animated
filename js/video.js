@@ -14,7 +14,8 @@ const MIMES = [
   "video/webm",
 ];
 
-const INTRO = 1.2, RACE = 14, OUTRO = 3.4;
+// 60-second video: short intro, race at constant speed, result card
+const INTRO = 1.5, RACE = 54.5, OUTRO = 4;
 const FPS = 30;
 const AVC_CODECS = ["avc1.4d0028", "avc1.640028", "avc1.42e028", "avc1.42001f"];
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -47,7 +48,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
   const render = (el, now) => {
     let t;
     if (el < INTRO) t = 0;
-    else if (el < INTRO + RACE) t = easeInOut((el - INTRO) / RACE) * tEnd;
+    else if (el < INTRO + RACE) t = ((el - INTRO) / RACE) * tEnd; // constant speed
     else t = tEnd;
     race.step(t);
     const st = sels.map((s) => race.stats(s.i, t));
@@ -75,7 +76,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
       output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
       error: (e) => { failure = e; },
     });
-    enc.configure({ codec, width: W, height: H, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" }, hardwareAcceleration });
+    enc.configure({ codec, width: W, height: H, bitrate: 2_500_000, framerate: FPS, avc: { format: "avc" }, hardwareAcceleration });
     const N = Math.round(total * FPS);
     const dur = Math.round(1e6 / FPS);
     for (let i = 0; i < N; i++) {
@@ -104,7 +105,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     if (!mime) throw new Error("no mime");
     const ext = mime.includes("mp4") ? "mp4" : "webm";
     const stream = canvas.captureStream(FPS);
-    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
     const chunks = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     const done = new Promise((res) => (rec.onstop = res));
@@ -184,7 +185,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     ctx.fillText(fmtClock(d.start + t), 20 * u, y0);
     ctx.font = `600 ${11 * u}px ${FONT}`;
     ctx.fillStyle = "rgba(214,222,255,0.6)";
-    ctx.fillText(`+${fmtDur(t)}`, 150 * u, y0 - 1 * u);
+    ctx.fillText(`+${fmtDur(t)}  ·  ${Math.round(tEnd / RACE)}×`, 150 * u, y0 - 1 * u);
     if (race.bf != null && t >= race.bf) {
       ctx.fillStyle = "#c81e1e";
       roundRect(ctx, W - 104 * u, y0 - 17 * u, 86 * u, 18 * u, 4 * u);
@@ -306,7 +307,7 @@ async function pickEncoder() {
     for (const codec of AVC_CODECS) {
       for (const hardwareAcceleration of HW) {
         try {
-          const r = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" }, hardwareAcceleration });
+          const r = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: 2_500_000, framerate: FPS, avc: { format: "avc" }, hardwareAcceleration });
           if (r.supported) return { codec, width, height, hardwareAcceleration };
         } catch (e) { /* try next */ }
       }

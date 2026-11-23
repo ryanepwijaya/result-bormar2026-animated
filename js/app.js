@@ -5,7 +5,7 @@ import { recordVideo } from "./video.js";
 const $ = (id) => document.getElementById(id);
 const CATS = ["fm", "hm", "10k"];
 const MAX = 3;
-const SPEEDS = [30, 60, 120, 300];
+const SPEEDS = [30, 60, 120, 300, 500, 750];
 const races = {};
 const DATA_VERSION = "3";
 const STATUS_TXT = { 0: "Finisher", 1: "Tidak finish", 2: "DNF", 3: "DQ", 4: "DNS" };
