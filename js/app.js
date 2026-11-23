@@ -454,6 +454,7 @@ $("share-btn").onclick = async () => {
   $("vm-video").classList.add("hidden");
   $("vm-share").classList.add("hidden");
   $("vm-download").classList.add("hidden");
+  $("vm-meta").classList.add("hidden");
   $("vm-bar-fill").style.width = "0%";
   $("vm-status").textContent = "Menyiapkan…";
   const wasPlaying = R.playing;
@@ -472,6 +473,11 @@ $("share-btn").onclick = async () => {
     v.classList.remove("hidden");
     v.play().catch(() => {});
     $("vm-progress").classList.add("hidden");
+    v.onloadedmetadata = () => {
+      const m = $("vm-meta");
+      m.textContent = `Durasi ${v.duration.toFixed(1)} detik · ${(out.blob.size / 1048576).toFixed(1)} MB · ${out.method}`;
+      m.classList.remove("hidden");
+    };
     const dl = $("vm-download");
     dl.href = videoUrl;
     dl.download = name;

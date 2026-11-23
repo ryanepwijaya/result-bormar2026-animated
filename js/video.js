@@ -3,6 +3,7 @@
 import { STATE, REASON, fmtClock, fmtDur, fmtKm, nf, crowdLabel } from "./sim.js";
 import { Scene, fitLayout, COLORS } from "./render.js";
 import { Muxer, ArrayBufferTarget } from "./vendor/mp4-muxer.mjs";
+import { isFragmentedMp4, remuxFragmentedMp4 } from "./remux.js";
 
 const MIMES = [
   "video/mp4;codecs=avc1.42E01E",
@@ -19,6 +20,10 @@ const AVC_CODECS = ["avc1.4d0028", "avc1.640028", "avc1.42e028", "avc1.42001f"];
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 export async function recordVideo(canvas, race, sels, onProgress) {
+  // Pick an encoder setup first: it may need a smaller canvas on some phones.
+  const enc = await pickEncoder();
+  if (enc) { canvas.width = enc.width; canvas.height = enc.height; }
+  else { canvas.width = 720; canvas.height = 1280; }
   const W = canvas.width, H = canvas.height;
   const u = W / 360; // layout designed on a 360 × 640 grid
   const ctx = canvas.getContext("2d");
@@ -52,12 +57,14 @@ export async function recordVideo(canvas, race, sels, onProgress) {
 
   // Preferred: WebCodecs + MP4 muxer -> standard MP4 with a correct duration,
   // rendered frame by frame (no dropped frames, faster than real time).
-  const codec = await pickAvcCodec(W, H);
-  if (codec) return await encodeMp4(codec);
-  // Fallback: MediaRecorder (real time). Some apps misread its duration.
+  if (enc) {
+    try { return await encodeMp4(enc); } catch (e) { console.warn("WebCodecs failed, falling back", e); }
+  }
+  // Fallback: MediaRecorder (real time), then remux its fragmented MP4 into a
+  // standard MP4 so players and apps read the right duration.
   return await recordRealtime();
 
-  async function encodeMp4(codec) {
+  async function encodeMp4({ codec, hardwareAcceleration }) {
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
       video: { codec: "avc", width: W, height: H, frameRate: FPS },
@@ -68,7 +75,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
       output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
       error: (e) => { failure = e; },
     });
-    enc.configure({ codec, width: W, height: H, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" } });
+    enc.configure({ codec, width: W, height: H, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" }, hardwareAcceleration });
     const N = Math.round(total * FPS);
     const dur = Math.round(1e6 / FPS);
     for (let i = 0; i < N; i++) {
@@ -88,7 +95,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     enc.close();
     if (failure) throw failure;
     muxer.finalize();
-    return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), mime: "video/mp4", ext: "mp4" };
+    return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), mime: "video/mp4", ext: "mp4", method: `encoder ${codec}` };
   }
 
   async function recordRealtime() {
@@ -117,7 +124,17 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     });
     rec.stop();
     await done;
-    return { blob: new Blob(chunks, { type: mime.split(";")[0] }), mime, ext };
+    const raw = new Blob(chunks, { type: mime.split(";")[0] });
+    if (ext === "mp4") {
+      try {
+        const u8 = new Uint8Array(await raw.arrayBuffer());
+        if (isFragmentedMp4(u8)) {
+          const fixed = remuxFragmentedMp4(u8);
+          return { blob: new Blob([fixed], { type: "video/mp4" }), mime: "video/mp4", ext: "mp4", method: "perekam + perbaikan durasi" };
+        }
+      } catch (e) { console.warn("remux failed", e); }
+    }
+    return { blob: raw, mime, ext, method: `perekam (${ext})` };
   }
 
   function frame(t, now, st, outro) {
@@ -281,13 +298,19 @@ export async function recordVideo(canvas, race, sels, onProgress) {
   }
 }
 
-async function pickAvcCodec(width, height) {
+const SIZES = [[720, 1280], [540, 960]];
+const HW = ["no-preference", "prefer-hardware", "prefer-software"];
+async function pickEncoder() {
   if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") return null;
-  for (const codec of AVC_CODECS) {
-    try {
-      const r = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" } });
-      if (r.supported) return codec;
-    } catch (e) { /* try next */ }
+  for (const [width, height] of SIZES) {
+    for (const codec of AVC_CODECS) {
+      for (const hardwareAcceleration of HW) {
+        try {
+          const r = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: 5_000_000, framerate: FPS, avc: { format: "avc" }, hardwareAcceleration });
+          if (r.supported) return { codec, width, height, hardwareAcceleration };
+        } catch (e) { /* try next */ }
+      }
+    }
   }
   return null;
 }
