@@ -38,6 +38,7 @@ h1 { font-size: clamp(30px, 7vw, 44px); line-height: 1.08; letter-spacing: -0.02
 .lead { color: var(--muted); font-size: 16px; line-height: 1.5; margin: 0 0 24px; }
 .disclaimer { font-size: 13px; line-height: 1.5; color: rgba(214,222,255,.72); background: rgba(255,194,75,.07); border: 1px solid rgba(255,194,75,.25); border-radius: 12px; padding: 12px 14px; margin: 0 0 20px; }
 .disclaimer b { color: var(--text); }
+.disclaimer .credit { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,194,75,.18); font-size: 12px; }
 .disclaimer strong { display: block; color: var(--gold); font-size: 13.5px; margin-bottom: 3px; }
 .search-form, .add-form { display: flex; gap: 8px; }
 .search-form input, .add-form input {

@@ -15,7 +15,6 @@ const MIMES = [
 
 const INTRO = 1.2, RACE = 14, OUTRO = 3.4;
 const FPS = 30;
-const CREDIT = "@ryanepwijaya";
 const AVC_CODECS = ["avc1.4d0028", "avc1.640028", "avc1.42e028", "avc1.42001f"];
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
@@ -142,7 +141,6 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     ctx.fillStyle = "rgba(214,222,255,0.4)";
     ctx.font = `600 ${8 * u}px ${FONT}`;
     ctx.fillText("SIMULASI TIDAK RESMI", 340 * u, 38 * u);
-    ctx.fillText(`oleh ${CREDIT}`, 340 * u, 50 * u);
     ctx.textAlign = "left";
     let x = 20 * u;
     ctx.font = `800 ${(multi ? 26 : 36) * u}px ${FONT}`;
@@ -263,7 +261,7 @@ export async function recordVideo(canvas, race, sels, onProgress) {
     ctx.fillStyle = "rgba(214,222,255,0.45)";
     const fy = (multi ? 215 + sels.length * 82 : 440) * u;
     ctx.fillText(location.host || "bormar replay", W / 2, fy);
-    ctx.fillText(`Simulasi tidak resmi oleh ${CREDIT} · hanya untuk hiburan`, W / 2, fy + 15 * u);
+    ctx.fillText("Simulasi tidak resmi · hanya untuk hiburan", W / 2, fy + 15 * u);
     ctx.globalAlpha = 1;
   }
 
