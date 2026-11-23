@@ -18,9 +18,9 @@ export class Race {
     this.bf = d.blackFlag != null ? d.blackFlag - d.start : null;
 
     this.index = new Map();
-    d.bib.forEach((b, i) => this.index.set(b.toUpperCase(), i));
+    d.bib.forEach((b, i) => { this.index.set(b.toUpperCase(), i); this.index.set(normBib(b), i); });
     this.noshow = new Map();
-    d.noshow.bib.forEach((b, i) => this.noshow.set(b.toUpperCase(), d.noshow.st[i]));
+    d.noshow.bib.forEach((b, i) => { this.noshow.set(b.toUpperCase(), d.noshow.st[i]); this.noshow.set(normBib(b), d.noshow.st[i]); });
 
     // Per runner known points (km, t), flattened with offsets.
     const off = new Int32Array(this.n + 1);
@@ -99,6 +99,9 @@ export class Race {
 
   find(bib) {
     const key = normBib(bib);
+    const raw = String(bib).trim().toUpperCase();
+    if (this.index.has(raw)) return { i: this.index.get(raw) };
+    if (this.noshow.has(raw)) return { noshow: true, st: this.noshow.get(raw) };
     if (this.index.has(key)) return { i: this.index.get(key) };
     if (this.noshow.has(key)) return { noshow: true, st: this.noshow.get(key) };
     return null;

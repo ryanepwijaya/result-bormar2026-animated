@@ -7,11 +7,12 @@ const CATS = ["fm", "hm", "10k"];
 const MAX = 3;
 const SPEEDS = [30, 60, 120, 300];
 const races = {};
+const DATA_VERSION = "3";
 const STATUS_TXT = { 0: "Finisher", 1: "Tidak finish", 2: "DNF", 3: "DQ", 4: "DNS" };
 
 // ---------------- loading ----------------
 async function load() {
-  const res = await Promise.all(CATS.map((c) => fetch(`data/${c}.json`).then((r) => r.json())));
+  const res = await Promise.all(CATS.map((c) => fetch(`data/${c}.json?v=${DATA_VERSION}`, { cache: "no-cache" }).then((r) => r.json())));
   res.forEach((d) => (races[d.id] = new Race(d)));
   $("search-btn").disabled = false;
   $("search-btn").textContent = "Cari";
@@ -491,6 +492,12 @@ $("vm-close").onclick = () => {
 
 // ---------------- PWA ----------------
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // a new version took over: reload once so code and data are from the same deploy
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 
