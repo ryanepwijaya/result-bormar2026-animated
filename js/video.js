@@ -232,6 +232,7 @@ function reasonText(race, i, long) {
   const r = race.reason[i];
   if (r === REASON.BF) return long ? "Black flag 09:45" : "Black flag";
   if (r === REASON.COP) return long ? "Lewat batas cut-off" : "Cut-off";
+  if (r === REASON.NOFIN) return long ? "Finish tidak tercatat" : "Finish tak tercatat";
   return "Tidak finish";
 }
 

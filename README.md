@@ -39,8 +39,7 @@ Setelah data atau file aplikasi berubah, naikkan `VERSION` di `sw.js` supaya cac
 - Semua pelari diasumsikan start di **wave 1** (FM 04:15, HM 04:55, 10K 05:40), karena wave per pelari tidak ada di data. Posisi bisa bergeser hingga 15 menit dari aslinya.
 - Di antara checkpoint, pace dianggap rata (interpolasi linear). KM resmi dipetakan proporsional ke panjang GPX.
 - **FM**: kolom "KM 10" ternyata dimulai dari checkpoint tersembunyi di sekitar KM 5,6. Waktu start → KM 5,6 tidak ada di data, jadi diestimasi dan diberi tanda †.
-- **Black flag 09:45 (FM saja)**: pelari tidak finish (QRY) lanjut dengan pace terakhirnya sampai 09:45, lalu berhenti. Batasnya: tidak melewati checkpoint berikutnya yang tidak tercatat, dan berhenti di COP yang sudah ditutup. Finisher tetap berlari sampai finish (209 finisher memang masuk setelah 09:45). Pelari yang checkpoint terakhirnya tercatat setelah 09:45 mengikuti datanya.
-- Kalau pace terakhir pelari QRY FM cukup untuk mencapai checkpoint berikutnya sebelum 09:45, berarti dia tidak berhenti karena black flag. Pelari seperti ini dibekukan di checkpoint terakhirnya ("Tidak finish"). Alasan berhenti (black flag / cut-off / tidak ada data) tersimpan di `Race.reason`.
+- **Black flag 09:45 (FM saja)**: pelari tidak finish (QRY) lanjut dengan pace segmen terakhirnya sampai 09:45, lalu berhenti. Pengecualiannya: kalau diestimasi tiba di COP setelah COP itu ditutup, dia dihentikan di COP tersebut. Titik tidak pernah melewati garis finish. Finisher tetap berlari sampai finish (209 finisher memang masuk setelah 09:45). Pelari yang checkpoint terakhirnya tercatat setelah 09:45 mengikuti datanya. Alasan berhenti tersimpan di `Race.reason`.
 - HM / 10K: DNF dan QRY berhenti di checkpoint terakhir yang tercatat.
 - Huruf depan bib (kanal pendaftaran) dibuang; angka bib unik di ketiga kategori.
 - Bib tanpa catatan checkpoint sama sekali (DNS) tidak tampil di rute.

@@ -379,7 +379,8 @@ function updateHud() {
     if (s.state === STATE.FIN) { chipCls = "chip fin"; chipTxt = `FINISH ${fmtDur(race.finishT[i])}`; }
     else if (stopped) {
       chipCls = "chip stop";
-      const why = race.reason[i] === REASON.BF ? "BLACK FLAG" : race.reason[i] === REASON.COP ? "CUT-OFF" : "BERHENTI";
+      const why = race.reason[i] === REASON.BF ? "BLACK FLAG" : race.reason[i] === REASON.COP ? "CUT-OFF"
+        : race.reason[i] === REASON.NOFIN ? "FINISH TAK TERCATAT" : "BERHENTI";
       chipTxt = `${why} ${fmtHM(d.start + race.endT[i])}`;
     }
     else if (s.state === STATE.EST) { chipCls = "chip est"; chipTxt = "ESTIMASI"; }
@@ -402,9 +403,13 @@ function updateHud() {
     c.gap.textContent = s.state === STATE.FIN || t <= 0 ? "–" : (gap < 0.05 ? "Terdepan" : `${fmtKm(gap)} km`);
     c.note.textContent = s.state === STATE.EST
       ? "Setelah checkpoint terakhir, posisi diestimasi dari pace terakhir (maks. sampai 09:45)."
-      : stopped ? (race.reason[i] === REASON.DATA
-        ? "Tidak ada catatan setelah checkpoint ini; titik dibekukan di catatan terakhir."
-        : "Posisi & sekitar dihitung saat pelari ini berhenti (estimasi).") : "";
+      : stopped ? (race.reason[i] === REASON.COP
+        ? "Diestimasi tiba di cut-off point setelah ditutup, jadi dihentikan di COP. Posisi & sekitar dihitung saat berhenti."
+        : race.reason[i] === REASON.BF
+          ? "Setelah catatan terakhir, posisi diestimasi dari pace terakhir sampai black flag 09:45."
+          : race.reason[i] === REASON.NOFIN
+            ? "Dengan pace terakhirnya pelari ini sampai di area finish sebelum 09:45, tapi waktu finish-nya tidak tercatat (status QRY)."
+            : "Berhenti di catatan terakhir.") : "";
   });
 
   if (R.sels.length >= 2 && sheetOpen) updateVs(stats, t);

@@ -4,7 +4,7 @@
 export const ST = { FIN: 0, QRY: 1, DNF: 2, DQ: 3, DNS: 4 };
 export const STATE = { RUN: 0, EST: 1, FIN: 2, STOP: 3 };
 // why a runner's dot stops: finish, black flag, closed cut-off point, or simply no more data
-export const REASON = { FIN: 0, BF: 1, COP: 2, DATA: 3 };
+export const REASON = { FIN: 0, BF: 1, COP: 2, DATA: 3, NOFIN: 4 };
 
 export class Race {
   constructor(d) {
@@ -58,8 +58,10 @@ export class Race {
         const k1 = kmA[last], t1 = tA[last];
         const k0 = kmA[last - 1], t0 = tA[last - 1];
         const pace = (k1 - k0) / (t1 - t0); // km per second
-        const lastK = this.km.indexOf(k1);
-        let cap = lastK >= 0 && lastK < this.K - 1 ? this.km[lastK + 1] - 0.05 : k1;
+        // Rule: keep going at the last pace until the black flag (09:45),
+        // unless the runner reaches a cut-off point after it has closed.
+        // Never beyond the finish line (they are not finishers).
+        let cap = this.dist - 0.05;
         let why = REASON.DATA;
         for (const c of d.cops) {
           if (c.km <= k1 || c.km >= cap) continue;
@@ -68,9 +70,8 @@ export class Race {
         }
         const capT = t1 + (cap - k1) / pace;
         let stopT;
-        if (this.bf < capT) { stopT = Math.max(t1, this.bf); why = REASON.BF; }
-        else if (why === REASON.COP) stopT = capT;
-        else stopT = t1; // would have reached the next checkpoint before 09:45: no evidence, freeze at last record
+        if (this.bf <= capT) { stopT = Math.max(t1, this.bf); why = REASON.BF; }
+        else { stopT = capT; if (why !== REASON.COP) why = REASON.NOFIN; } // closed COP, or reached the finish area but no finish time recorded
         const stopK = k1 + (stopT - t1) * pace;
         if (stopT > t1 + 1) { kmA.push(stopK); tA.push(stopT); }
         this.endT[i] = stopT;
